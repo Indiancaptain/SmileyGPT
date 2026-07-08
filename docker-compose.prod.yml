@@ -1,0 +1,67 @@
+# Production overlay. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# This does NOT include TLS termination — put a reverse proxy you already
+# trust (Caddy, Traefik, nginx, or your cloud provider's load balancer) in
+# front of the frontend/backend ports and terminate HTTPS there. TLS setup
+# is too environment-specific (DNS, cert issuer, existing infra) to bake in
+# safely here without producing a config that looks complete but isn't.
+
+version: "3.9"
+
+services:
+  postgres:
+    restart: always
+    ports: [] # do not expose Postgres to the host at all in production
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+
+  redis:
+    restart: always
+    ports: [] # do not expose Redis to the host at all in production
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+
+  backend:
+    restart: always
+    environment:
+      ENV: production
+      DEBUG: "false"
+    # 4 uvicorn worker processes behind the single container; scale further
+    # by running multiple `backend` replicas behind a load balancer rather
+    # than raising this indefinitely (each worker holds its own DB pool).
+    #
+    # Caveat: long-term memory (app/services/memory_service.py) uses an
+    # embedded Chroma client backed by SQLite on the shared /data volume.
+    # Multiple worker processes writing memories concurrently can hit
+    # SQLite lock contention under sustained heavy load. If you expect high
+    # concurrent chat volume, either drop to --workers 1, or swap the
+    # memory backend for a standalone Chroma/Qdrant server (see
+    # ARCHITECTURE.md's known-gaps section).
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+
+  frontend:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5

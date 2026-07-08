@@ -1,0 +1,81 @@
+version: "3.9"
+
+# Quick start:
+#   1. cp backend/.env.example backend/.env    (edit SECRET_KEY, LLM_API_KEY)
+#   2. cp frontend/.env.example frontend/.env
+#   3. docker compose up --build
+#
+# Both `env_file` entries below are `required: false`: if you skip steps
+# 1/2, the stack still boots using the defaults baked into
+# backend/app/core/config.py (which already match this compose file's
+# service hostnames/ports) — but LLM_API_KEY will be empty, so chat falls
+# back to a clearly-labeled placeholder response instead of a real model,
+# and SECRET_KEY will be the insecure development default. Fine for a
+# quick local look; do not deploy publicly without setting your own.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smiley
+      POSTGRES_PASSWORD: smiley
+      POSTGRES_DB: smileygpt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # localhost-only: not reachable from outside the host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smiley -d smileygpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379" # localhost-only: not reachable from outside the host
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_data:/data
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      # Not secret and not something a .env override should ever change
+      # (it must match the backend service's name on this compose network).
+      BACKEND_INTERNAL_URL: http://backend:8000
+    env_file:
+      - path: ./frontend/.env
+        required: false
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  backend_data:
