@@ -6,6 +6,7 @@ variables (see .env.example). Never hardcode secrets here.
 from functools import lru_cache
 from typing import List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +54,14 @@ class Settings(BaseSettings):
 
     # Admin
     ADMIN_EMAILS: List[str] = []
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        """Convert sync postgresql:// URLs to async postgresql+psycopg://"""
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+psycopg://", 1)
+        return v
 
 
 @lru_cache
