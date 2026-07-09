@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
 
     # Database
-    DATABASE_URL: str = "postgresql+psycopg://smiley:smiley@postgres:5432/smileygpt"
+    DATABASE_URL: str = "postgresql+asyncpg://smiley:smiley@postgres:5432/smileygpt"
 
     # Redis
     REDIS_URL: str = "redis://redis:6379/0"
